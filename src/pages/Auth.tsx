@@ -16,27 +16,13 @@ export default function Auth() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetMode, setResetMode] = useState(false);
-  const [isRecovery, setIsRecovery] = useState(false);
+  
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
-
-  // Detect recovery mode from hash fragment
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setIsRecovery(true);
-    } else {
-      setIsRecovery(false);
-    }
-  }, []);
-
-  // Redirect logged-in users
-  useEffect(() => {
-    if (user && !isRecovery) {
-      navigate("/dashboard");
-    }
-  }, [user, navigate, isRecovery]);
+    if (user) navigate("/dashboard");
+  }, [user, navigate]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,7 +58,8 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth?type=recovery`,
+      // redirect to a dedicated reset page that handles tokens and password update
+      redirectTo: `${window.location.origin}/reset`,
     });
     setLoading(false);
     if (error) {
@@ -120,7 +107,6 @@ export default function Auth() {
         title: "Success",
         description: "Password updated successfully. You are now signed in.",
       });
-  setIsRecovery(false);
       setPassword("");
       setConfirmPassword("");
       navigate("/dashboard");
@@ -162,35 +148,7 @@ export default function Auth() {
     );
   }
 
-  // --- Confirm Recovery Mode ---
-  if (isRecovery) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <ThemeToggle />
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Set New Password</CardTitle>
-            <CardDescription>Enter your new password to reset your account</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleConfirmNewPassword} className="space-y-4">
-              <div className="space-y-2">
-                <Label>New Password</Label>
-                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Confirm Password</Label>
-                <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Updating..." : "Update Password"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  
 
   // --- Sign In / Sign Up ---
   return (
