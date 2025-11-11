@@ -17,15 +17,28 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [resetMode, setResetMode] = useState(false);
   const [confirmResetMode, setConfirmResetMode] = useState(false);
+  const [isRecovery, setIsRecovery] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // Detect recovery mode from hash fragment
   useEffect(() => {
-    if (user) {
+    const hash = window.location.hash;
+    if (hash.includes("type=recovery")) {
+      setConfirmResetMode(true);
+      setIsRecovery(true);
+    } else {
+      setIsRecovery(false);
+    }
+  }, []);
+
+  // Only redirect to dashboard if NOT in recovery mode
+  useEffect(() => {
+    if (user && !isRecovery && !confirmResetMode) {
       navigate("/dashboard");
     }
-  }, [user, navigate]);
+  }, [user, navigate, isRecovery, confirmResetMode]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,7 +211,7 @@ export default function Auth() {
     );
   }
 
-  if (confirmResetMode) {
+  if (confirmResetMode || isRecovery) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <ThemeToggle />
