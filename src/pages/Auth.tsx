@@ -16,7 +16,6 @@ export default function Auth() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetMode, setResetMode] = useState(false);
-  const [confirmResetMode, setConfirmResetMode] = useState(false);
   const [isRecovery, setIsRecovery] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -26,24 +25,22 @@ export default function Auth() {
   useEffect(() => {
     const hash = window.location.hash;
     if (hash.includes("type=recovery")) {
-      setConfirmResetMode(true);
       setIsRecovery(true);
     } else {
       setIsRecovery(false);
     }
   }, []);
 
-  // Only redirect to dashboard if NOT in recovery mode
+  // Redirect logged-in users
   useEffect(() => {
-    if (user && !isRecovery && !confirmResetMode) {
+    if (user && !isRecovery) {
       navigate("/dashboard");
     }
-  }, [user, navigate, isRecovery, confirmResetMode]);
+  }, [user, navigate, isRecovery]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -51,40 +48,21 @@ export default function Auth() {
         emailRedirectTo: `${window.location.origin}/dashboard`,
       },
     });
-
     setLoading(false);
-
     if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({
-        title: "Success",
-        description: "Check your email to confirm your account",
-      });
+      toast({ title: "Success", description: "Check your email to confirm your account." });
     }
   };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-
     if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       navigate("/dashboard");
     }
@@ -93,83 +71,71 @@ export default function Auth() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth?type=recovery`,
     });
-
     setLoading(false);
-
     if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({
-        title: "Success",
-        description: "Check your email for the reset link",
-      });
+      toast({ title: "Success", description: "Check your email for the reset link." });
       setResetMode(false);
     }
   };
 
   const handleConfirmNewPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (password !== confirmPassword) {
-      toast({
-        title: "Error",
-        description: "Passwords do not match",
-        variant: "destructive",
-      });
-      return;
+      return toast({ title: "Error", description: "Passwords do not match", variant: "destructive" });
     }
-
     if (password.length < 6) {
-      toast({
-        title: "Error",
-        description: "Password must be at least 6 characters",
-        variant: "destructive",
-      });
-      return;
+      return toast({ title: "Error", description: "Password must be at least 6 characters", variant: "destructive" });
     }
 
     setLoading(true);
+    try {
+      // If the recovery link included tokens in the URL fragment, set the session
+      const raw = window.location.hash || window.location.search || "";
+      const paramsString = raw.startsWith("#") || raw.startsWith("?") ? raw.slice(1) : raw;
+      const params = new URLSearchParams(paramsString);
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
 
-    const { error } = await supabase.auth.updateUser({
-      password: password,
-    });
+      if (access_token && refresh_token) {
+        const { error: setErr } = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+        if (setErr) {
+          throw setErr;
+        }
+      }
 
-    setLoading(false);
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
 
-    if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
+      // successful: clear url fragment and navigate to dashboard
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
       toast({
         title: "Success",
-        description: "Password updated successfully. Please sign in.",
+        description: "Password updated successfully. You are now signed in.",
       });
-      setConfirmResetMode(false);
+  setIsRecovery(false);
       setPassword("");
       setConfirmPassword("");
-      navigate("/auth");
+      navigate("/dashboard");
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.message || String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Check if user is in recovery mode (from password reset email link)
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setConfirmResetMode(true);
-    }
-  }, []);
-
+  // --- Password Reset Mode ---
   if (resetMode) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -182,27 +148,12 @@ export default function Auth() {
           <CardContent>
             <form onSubmit={handleResetPassword} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="reset-email">Email</Label>
-                <Input
-                  id="reset-email"
-                  type="email"
-                  placeholder="your@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
+                <Label>Email</Label>
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </div>
               <div className="flex gap-2">
-                <Button type="submit" className="flex-1" disabled={loading}>
-                  {loading ? "Sending..." : "Send Reset Link"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setResetMode(false)}
-                >
-                  Cancel
-                </Button>
+                <Button type="submit" disabled={loading}>{loading ? "Sending..." : "Send Reset Link"}</Button>
+                <Button type="button" variant="outline" onClick={() => setResetMode(false)}>Cancel</Button>
               </div>
             </form>
           </CardContent>
@@ -211,7 +162,8 @@ export default function Auth() {
     );
   }
 
-  if (confirmResetMode || isRecovery) {
+  // --- Confirm Recovery Mode ---
+  if (isRecovery) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <ThemeToggle />
@@ -223,26 +175,12 @@ export default function Auth() {
           <CardContent>
             <form onSubmit={handleConfirmNewPassword} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  placeholder="At least 6 characters"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+                <Label>New Password</Label>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm Password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  placeholder="Confirm your password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                />
+                <Label>Confirm Password</Label>
+                <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Updating..." : "Update Password"}
@@ -254,6 +192,7 @@ export default function Auth() {
     );
   }
 
+  // --- Sign In / Sign Up ---
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <ThemeToggle />
@@ -268,28 +207,16 @@ export default function Auth() {
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
+
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signin-email">Email</Label>
-                  <Input
-                    id="signin-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
+                  <Label>Email</Label>
+                  <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signin-password">Password</Label>
-                  <Input
-                    id="signin-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
+                  <Label>Password</Label>
+                  <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 </div>
                 <Button
                   type="button"
@@ -304,28 +231,16 @@ export default function Auth() {
                 </Button>
               </form>
             </TabsContent>
+
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
+                  <Label>Email</Label>
+                  <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
+                  <Label>Password</Label>
+                  <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Creating account..." : "Sign Up"}
